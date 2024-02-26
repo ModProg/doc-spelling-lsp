@@ -1,0 +1,21 @@
+# https://taskfile.dev
+
+version: '3'
+
+env:
+  GREETING: Hello, World!
+  HOME: "hello"
+
+tasks:
+  update-language-tool:
+    cmds:
+      - curl https://languagetool.org/download/LanguageTool-stable.zip
+  build:
+    cmds:
+      - cargo build
+  helix:
+    deps:
+      - build
+    cmds:
+      - rm home/.cache/helix/helix.log
+      - env HOME="./home" hx -vvv test.rs

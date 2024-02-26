@@ -1,0 +1,8 @@
+[language-server.language-tool]
+# environment.LOG_FILE = "log"
+environment.RUST_BACKTRACE = "1"
+command = "./target/debug/ltex-lsp-rust"
+
+[[language]]
+name = "rust"
+language-servers = ["language-tool"]

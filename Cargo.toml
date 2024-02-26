@@ -1,0 +1,56 @@
+[package]
+name = "ltex-lsp-rust"
+version = "0.1.0"
+edition = "2021"
+categories = []
+description = ""
+keywords = []
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/ModProg/ltex-lsp-rust"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.80"
+crossbeam-channel = "0.5.11"
+directories = "5.0.1"
+intentional = "0.1.1"
+languagetool-rust = "2.1.4"
+tower-lsp.git = "https://github.com/ModProg/tower-lsp/"
+tower-lsp.branch = "custom-message-builder-like"
+portpicker = "0.1.1"
+rust-embed = "8.2.0"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.114"
+smart-default = "0.7.1"
+thiserror = "1.0.57"
+trace = "0.1.7"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "fmt"] }
+zip = "0.6.6"
+tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread", "io-std"] }
+extend = "1.2.0"
+ra-ap-rustc_lexer = "0.38.0"
+non-exhaustive = "0.1.0"
+pulldown-cmark = "0.10.0"
+markdown = "1.0.0-alpha.16"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = '## \[Unreleased\]'
+replace = """
+<!-- ## [Unreleased] -->
+## [{{version}}] - {{date}}\
+"""
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = '\[unreleased\]: (.*)/(v.*)\.\.\.HEAD'
+replace = """
+[unreleased]: $1/{{tag_name}}...HEAD
+[{{version}}]: $1/$2...{{tag_name}}\
+"""
