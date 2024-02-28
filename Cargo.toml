@@ -1,5 +1,5 @@
 [package]
-name = "ltex-lsp-rust"
+name = "doc-spelling-lsp"
 version = "0.1.0"
 edition = "2021"
 categories = []
@@ -7,7 +7,7 @@ description = ""
 keywords = []
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/ModProg/ltex-lsp-rust"
+repository = "https://github.com/ModProg/doc-spelling-lsp"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

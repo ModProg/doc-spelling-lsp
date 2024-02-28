@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::mem;
 use std::ops::Range;
 use std::time::Duration;
 
@@ -53,7 +52,7 @@ impl Comment {
                     DataAnnotation::new_interpreted_markup(content, " ".to_owned())
                 }
                 pulldown_cmark::Event::HardBreak => {
-                    DataAnnotation::new_interpreted_markup(content, "\n".to_owned())
+                    DataAnnotation::new_interpreted_markup(content, "\n\n".to_owned())
                 }
                 pulldown_cmark::Event::Code(_) => {
                     DataAnnotation::new_interpreted_markup(content, "0".into())
@@ -130,8 +129,8 @@ pub async fn diagnose(
                 RustTokenKind::LineComment {
                     doc_style: Some(DocStyle::Inner),
                 } => Some(Token::Inner(
-                    (start + 3 + usize::from(dbg!(&document[3.min(end)..]).starts_with(' ')))
-                        .min(end)..end,
+                    (start + 3 + usize::from(document[3.min(end)..].starts_with(' '))).min(end)
+                        ..end,
                 )),
                 RustTokenKind::LineComment {
                     doc_style: Some(DocStyle::Outer),
@@ -177,7 +176,7 @@ pub async fn diagnose(
             match ltex_client
                 .check(&non_exhaustive!(CheckRequest {
                     data: Some(non_exhaustive!(languagetool_rust::check::Data {
-                        annotation: dbg!(comment.tag_markup())
+                        annotation: comment.tag_markup()
                     })),
                     language: "en-US".into(),
                     disabled_rules: Some(vec![

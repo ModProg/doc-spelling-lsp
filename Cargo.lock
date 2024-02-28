@@ -399,6 +399,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "doc-spelling-lsp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossbeam-channel",
+ "directories",
+ "extend",
+ "intentional",
+ "languagetool-rust",
+ "markdown",
+ "non-exhaustive",
+ "portpicker",
+ "pulldown-cmark",
+ "ra-ap-rustc_lexer",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "smart-default",
+ "thiserror",
+ "tokio",
+ "tower-lsp",
+ "trace",
+ "tracing",
+ "tracing-subscriber",
+ "zip",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -850,34 +878,6 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "url",
-]
-
-[[package]]
-name = "ltex-lsp-rust"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crossbeam-channel",
- "directories",
- "extend",
- "intentional",
- "languagetool-rust",
- "markdown",
- "non-exhaustive",
- "portpicker",
- "pulldown-cmark",
- "ra-ap-rustc_lexer",
- "rust-embed",
- "serde",
- "serde_json",
- "smart-default",
- "thiserror",
- "tokio",
- "tower-lsp",
- "trace",
- "tracing",
- "tracing-subscriber",
- "zip",
 ]
 
 [[package]]

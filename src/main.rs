@@ -15,6 +15,8 @@ use anyhow::Context;
 use extend::ext;
 use intentional::Assert;
 use languagetool_rust::check::Replacement;
+use languagetool_rust::ServerClient;
+use state::State;
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::{Error, Result};
 use tower_lsp::lsp_types::{
@@ -27,7 +29,9 @@ use zip::ZipArchive;
 
 use self::diagnostic::diagnose;
 
+mod config;
 mod diagnostic;
+mod state;
 
 const ONLY_EXTRACT: &str = "LTEX_LSP_RUST_EXTRACT_IN_THIS_PROCESS";
 // NOTE: This is a Cow, because rustc runs out of memory otherwise.
@@ -128,6 +132,7 @@ struct Lsp {
     ltex_client: Arc<Mutex<Option<languagetool_rust::ServerClient>>>,
     documents: Arc<Mutex<HashMap<Url, String>>>,
     diagnose: tokio::sync::watch::Sender<HashSet<Url>>,
+    state: tokio::sync::watch::Sender<state::State>,
 }
 
 impl Lsp {
@@ -135,18 +140,19 @@ impl Lsp {
         let ltex_server: Arc<Mutex<Option<Child>>> = Arc::default();
         let ltex_client: Arc<Mutex<Option<languagetool_rust::ServerClient>>> = Arc::default();
         let documents: Arc<Mutex<HashMap<Url, String>>> = Arc::default();
-        let (sender, mut receiver) = tokio::sync::watch::channel(HashSet::new());
+        let (diagnose_sender, mut diagnose_recv) = tokio::sync::watch::channel(HashSet::new());
+        let (state_sender, mut state_recv) = tokio::sync::watch::channel(State::default());
         {
             let ltex_client = ltex_client.clone();
             let documents = documents.clone();
             let client = client.clone();
             tokio::spawn(async move {
                 loop {
-                    receiver
+                    diagnose_recv
                         .changed()
                         .await
                         .expect("we should not drop the sender");
-                    let tasks = receiver.borrow_and_update().clone();
+                    let tasks = diagnose_recv.borrow_and_update().clone();
                     for uri in tasks {
                         let documents = documents.lock().await;
                         let document = documents
@@ -172,12 +178,11 @@ impl Lsp {
             ltex_server,
             ltex_client,
             documents,
-            diagnose: sender,
+            state: state_sender,
+            diagnose: diagnose_sender,
         }
     }
 }
-
-mod config;
 
 macro_rules! ensure {
     ($cond:expr, $error:expr) => {
@@ -215,6 +220,28 @@ impl Lsp {
     }
 }
 
+fn run_server(
+    command: &mut Command,
+    config::LocalServer { port, extra_args }: config::LocalServer,
+) -> Result<(Option<Child>, ServerClient)> {
+    let port = port
+        .or_else(portpicker::pick_unused_port)
+        .internal_error("unable to find unused port")?
+        .to_string();
+    let program = command.get_program().to_string_lossy().to_string();
+    Ok((
+        Some(
+            command
+                .arg("--port")
+                .arg(&port)
+                .args(extra_args)
+                .spawn()
+                .internal_error(format!("spawning language tool server `{program}`"))?,
+        ),
+        languagetool_rust::ServerClient::new("http://localhost", &port),
+    ))
+}
+
 #[async_trait]
 impl LanguageServer for Lsp {
     #[instrument]
@@ -226,7 +253,7 @@ impl LanguageServer for Lsp {
             .invalid_params("error deserializing config:")?
             .unwrap_or_default();
         let (ltex_server, ltex_client) = match init_options.server {
-            config::Server::Embedded { location, port } => {
+            config::Server::Embedded { location, config } => {
                 let location = &if let Some(location) = location.clone() {
                     location
                 } else {
@@ -248,29 +275,16 @@ impl LanguageServer for Lsp {
                     );
                 }
                 let server_executable = server_binary.executabe_path(location);
-                let port = port
-                    .or_else(portpicker::pick_unused_port)
-                    .internal_error("unable to find unused port")?
-                    .to_string();
-                (
-                    Some(
-                        Command::new("java")
-                            .arg("-cp")
-                            .arg(&server_executable)
-                            .arg("org.languagetool.server.HTTPServer")
-                            .arg("--port")
-                            .arg(&port)
-                            .spawn()
-                            .internal_error(format!(
-                                "spawning language tool server at {}",
-                                server_executable.display()
-                            ))?,
-                    ),
-                    languagetool_rust::ServerClient::new("http://localhost", &port),
-                )
+                run_server(
+                    Command::new("java")
+                        .arg("-cp")
+                        .arg(&server_executable)
+                        .arg("org.languagetool.server.HTTPServer"),
+                    config,
+                )?
             }
             config::Server::Online {} => todo!(),
-            config::Server::Local {} => todo!(),
+            config::Server::Local { .. } => todo!(),
         };
         *self.ltex_server.lock().await = ltex_server;
         *self.ltex_client.lock().await = Some(ltex_client);
