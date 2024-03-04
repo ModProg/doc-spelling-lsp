@@ -9,7 +9,7 @@ env:
 tasks:
   update-language-tool:
     cmds:
-      - curl https://languagetool.org/download/LanguageTool-stable.zip
+      - curl https://languagetool.org/download/LanguageTool-stable.zip -o embedded-language-tool/LanguageTool-stable.zip
   build:
     cmds:
       - cargo build

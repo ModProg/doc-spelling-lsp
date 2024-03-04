@@ -4,10 +4,14 @@ use std::time::Duration;
 
 use languagetool_rust::check::DataAnnotation;
 use languagetool_rust::CheckRequest;
+use log::{debug, error};
 use non_exhaustive::non_exhaustive;
 use ra_ap_rustc_lexer::{DocStyle, Token as RustToken, TokenKind as RustTokenKind};
+use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position};
+
+use crate::state::State;
 
 #[derive(Clone)]
 enum Token {
@@ -27,7 +31,6 @@ impl Comment {
         let mut parser = pulldown_cmark::Parser::new(&self.content)
             .into_offset_iter()
             .peekable();
-        eprintln!("{}", self.content);
         let mut in_code_block = 0;
         let mut last = 0;
         let mut tokens = Vec::new();
@@ -112,10 +115,17 @@ impl Comment {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Meta {
+    pub missspelled: Option<String>,
+    pub replacements: Vec<String>,
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn diagnose(
     document: &str,
     ltex_client: &languagetool_rust::ServerClient,
+    state: &State,
 ) -> anyhow::Result<Vec<Diagnostic>> {
     let mut current = 0;
     // First collect all the ranges that represent comment content
@@ -179,10 +189,14 @@ pub async fn diagnose(
                         annotation: comment.tag_markup()
                     })),
                     language: "en-US".into(),
-                    disabled_rules: Some(vec![
-                        "WHITESPACE_RULE".into(),
-                        "CONSECUTIVE_SPACES".into()
-                    ]),
+                    disabled_rules: Some(
+                        state
+                            .disabled_rules
+                            .iter()
+                            .map(ToString::to_string)
+                            .chain(["WHITESPACE_RULE".into(), "CONSECUTIVE_SPACES".into()])
+                            .collect()
+                    ),
                     ..CheckRequest::default()
                 }))
                 .await
@@ -199,6 +213,19 @@ pub async fn diagnose(
         };
 
         for result in results.matches {
+            const MISSPELLING: &str = "misspelling";
+            let word = comment
+                .content
+                .get(result.offset..result.offset + result.length)
+                .unwrap_or_else(|| {
+                    error!("invalid offset in {result:?}");
+                    ""
+                });
+
+            if result.rule.issue_type == MISSPELLING && state.dictionary.contains(word) {
+                debug!("ignoring word in dictionary: `{word}`");
+                continue;
+            }
             // TODO error? because offset is external
             let start = comment.map_position(document, result.offset);
             let end = comment.map_position(document, result.offset + result.length);
@@ -213,9 +240,16 @@ pub async fn diagnose(
                 source: Some("ltex".into()),
                 message: result.message,
                 data: Some(
-                    serde_json::to_value(
-                        result.replacements[0..result.replacements.len().min(10)].to_vec(),
-                    )
+                    serde_json::to_value(Meta {
+                        replacements: result
+                            .replacements
+                            .into_iter()
+                            .take(10)
+                            .map(|r| r.value)
+                            .collect(),
+                        missspelled: (result.rule.issue_type == MISSPELLING)
+                            .then(|| word.to_owned()),
+                    })
                     .unwrap(),
                 ),
                 ..Default::default()

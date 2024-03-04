@@ -1,5 +1,6 @@
 [language-server.language-tool]
 # environment.LOG_FILE = "log"
+environment.RUST_LOG = "debug"
 environment.RUST_BACKTRACE = "1"
 command = "./target/debug/doc-spelling-lsp"
 

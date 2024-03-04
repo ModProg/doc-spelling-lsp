@@ -18,11 +18,11 @@ pub enum Server {
         ///
         /// Default is:
         ///
-        /// | Platform | Value                                                                        |
-        /// | -------- | ---------------------------------------------------------------------------- |
-        /// | Linux    | `$XDG_DATA_HOME/language-tool-lsp` or `$HOME/.local/share/language-tool-lsp` |
-        /// | macOS    | `$HOME/Library/Application Support/language-tool-lsp`                        |
-        /// | Windows  | `{FOLDERID_RoamingAppData}\language-tool-lsp`                                |
+        /// | Platform | Value                                                                      |
+        /// | -------- | -------------------------------------------------------------------------- |
+        /// | Linux    | `$XDG_DATA_HOME/doc-spelling-lsp` or `$HOME/.local/share/doc-spelling-lsp` |
+        /// | macOS    | `$HOME/Library/Application Support/doc-spelling-lsp`                       |
+        /// | Windows  | `{FOLDERID_RoamingAppData}\doc-spelling-lsp`                               |
         location: Option<PathBuf>,
         #[serde(flatten)]
         config: LocalServer,
@@ -59,10 +59,10 @@ pub struct State {
     ///
     /// Default is:
     ///
-    /// | Platform | Value                                                                                           |
-    /// | -------- | ----------------------------------------------------------------------------------------------- |
-    /// | Linux    | `$XDG_CONFIG_HOME/language-tool-lsp/state.json` or `$HOME/.config/language-tool-lsp/state.json` |
-    /// | macOS    | `$HOME/Library/Application Support/language-tool-lsp/state.json`                                |
-    /// | Windows  | `{FOLDERID_RoamingAppData}\language-tool-lsp/sate.json`                                         |
-    location: Option<PathBuf>,
+    /// | Platform | Value                                                                                       |
+    /// | -------- | ------------------------------------------------------------------------------------------- |
+    /// | Linux    | `$XDG_CONFIG_HOME/doc-spelling-ls/state.json` or `$HOME/.config/doc-spelling-ls/state.json` |
+    /// | macOS    | `$HOME/Library/Application Support/doc-spelling-ls/state.json`                              |
+    /// | Windows  | `{FOLDERID_RoamingAppData}\doc-spelling-ls/sate.json`                                       |
+    pub location: Option<PathBuf>,
 }
