@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 
 use log::error;
@@ -9,7 +9,7 @@ use crate::{config, stdresultResultTEExt};
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 #[must_use]
 pub struct State {
-    pub disabled_rules: HashSet<String>,
+    pub disabled_rules: BTreeSet<String>,
     pub dictionary: HashSet<String>,
 }
 

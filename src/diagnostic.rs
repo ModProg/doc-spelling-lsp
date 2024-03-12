@@ -1,7 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::time::Duration;
 
+use cached::proc_macro::cached;
+use futures::{StreamExt, TryStreamExt};
 use languagetool_rust::check::DataAnnotation;
 use languagetool_rust::CheckRequest;
 use log::{debug, error};
@@ -178,84 +180,109 @@ pub async fn diagnose(
             }
         });
 
+    futures::stream::iter(doc_comments)
+        .map(|c| diagnose_comment(c, document, ltex_client, state))
+        .buffered(10)
+        .try_fold(Vec::new(), |mut b, i| async move {
+            b.extend_from_slice(&i);
+            Ok(b)
+        })
+        .await
+}
+
+async fn diagnose_comment(
+    comment: Comment,
+    document: &str,
+    ltex_client: &languagetool_rust::ServerClient,
+    state: &State,
+) -> anyhow::Result<Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
-
-    for comment in doc_comments {
-        let mut tries = 0;
-        let results = loop {
-            match ltex_client
-                .check(&non_exhaustive!(CheckRequest {
-                    data: Some(non_exhaustive!(languagetool_rust::check::Data {
-                        annotation: comment.tag_markup()
-                    })),
-                    language: "en-US".into(),
-                    disabled_rules: Some(
-                        state
-                            .disabled_rules
-                            .iter()
-                            .map(ToString::to_string)
-                            .chain(["WHITESPACE_RULE".into(), "CONSECUTIVE_SPACES".into()])
-                            .collect()
-                    ),
-                    ..CheckRequest::default()
-                }))
-                .await
-            {
-                Ok(results) => break results,
-                Err(e) => {
-                    if tries > 10 {
-                        todo!("{e:?}")
-                    }
-                    tries += 1;
-                    sleep(Duration::from_secs(1)).await;
-                }
-            }
-        };
-
-        for result in results.matches {
-            const MISSPELLING: &str = "misspelling";
-            let word = comment
-                .content
-                .get(result.offset..result.offset + result.length)
-                .unwrap_or_else(|| {
-                    error!("invalid offset in {result:?}");
-                    ""
-                });
-
-            if result.rule.issue_type == MISSPELLING && state.dictionary.contains(word) {
-                debug!("ignoring word in dictionary: `{word}`");
-                continue;
-            }
-            // TODO error? because offset is external
-            let start = comment.map_position(document, result.offset);
-            let end = comment.map_position(document, result.offset + result.length);
-
-            // TODO unicode :D
-            // TODO code actions
-            diagnostics.push(Diagnostic {
-                range: tower_lsp::lsp_types::Range { start, end },
-                severity: Some(DiagnosticSeverity::INFORMATION),
-                code: None,
-                code_description: None,
-                source: Some("ltex".into()),
-                message: result.message,
-                data: Some(
-                    serde_json::to_value(Meta {
-                        replacements: result
-                            .replacements
-                            .into_iter()
-                            .take(10)
-                            .map(|r| r.value)
-                            .collect(),
-                        missspelled: (result.rule.issue_type == MISSPELLING)
-                            .then(|| word.to_owned()),
-                    })
-                    .unwrap(),
-                ),
-                ..Default::default()
+    for result in check_request(ltex_client, comment.tag_markup(), &state.disabled_rules).await {
+        const MISSPELLING: &str = "misspelling";
+        let word = comment
+            .content
+            .get(result.offset..result.offset + result.length)
+            .unwrap_or_else(|| {
+                error!("invalid offset in {result:?}");
+                ""
             });
+
+        if result.rule.issue_type == MISSPELLING && state.dictionary.contains(word) {
+            debug!("ignoring word in dictionary: `{word}`");
+            continue;
         }
+        // TODO error? because offset is external
+        let start = comment.map_position(document, result.offset);
+        let end = comment.map_position(document, result.offset + result.length);
+
+        // TODO unicode :D
+        // TODO code actions
+        diagnostics.push(Diagnostic {
+            range: tower_lsp::lsp_types::Range { start, end },
+            severity: Some(DiagnosticSeverity::INFORMATION),
+            code: None,
+            code_description: None,
+            source: Some("ltex".into()),
+            message: result.message,
+            data: Some(
+                serde_json::to_value(Meta {
+                    replacements: result
+                        .replacements
+                        .into_iter()
+                        .take(10)
+                        .map(|r| r.value)
+                        .collect(),
+                    missspelled: (result.rule.issue_type == MISSPELLING).then(|| word.to_owned()),
+                })
+                .unwrap(),
+            ),
+            ..Default::default()
+        });
     }
 
     Ok(diagnostics)
+}
+
+#[cached(
+    size = 500,
+    key = "(Vec<DataAnnotation>, BTreeSet<String>)",
+    convert = "{(data.clone(), disabled_rules.clone())}"
+)]
+async fn check_request(
+    ltex_client: &languagetool_rust::ServerClient,
+    data: Vec<DataAnnotation>,
+    disabled_rules: &BTreeSet<String>,
+) -> Vec<languagetool_rust::check::Match> {
+    let mut tries = 0;
+    let results = loop {
+        match ltex_client
+            .check(&non_exhaustive!(CheckRequest {
+                data: Some(non_exhaustive!(languagetool_rust::check::Data {
+                    annotation: data.clone()
+                })),
+                language: "en-US".into(),
+                disabled_rules: Some(
+                    disabled_rules
+                        .iter()
+                        .map(ToString::to_string)
+                        .chain(["WHITESPACE_RULE".into(), "CONSECUTIVE_SPACES".into()])
+                        .collect()
+                ),
+                ..CheckRequest::default()
+            }))
+            .await
+        {
+            Ok(results) => break results,
+            Err(e) => {
+                if tries > 10 {
+                    error!("unable to spell check, skipping: {e}");
+                    return Vec::new();
+                }
+                tries += 1;
+                sleep(Duration::from_secs(1)).await;
+            }
+        }
+    };
+
+    results.matches
 }
