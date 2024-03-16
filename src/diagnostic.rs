@@ -11,7 +11,7 @@ use non_exhaustive::non_exhaustive;
 use ra_ap_rustc_lexer::{DocStyle, Token as RustToken, TokenKind as RustTokenKind};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position};
+use lsp_types::{Diagnostic, DiagnosticSeverity, Position};
 
 use crate::state::State;
 
@@ -218,7 +218,7 @@ async fn diagnose_comment(
         // TODO unicode :D
         // TODO code actions
         diagnostics.push(Diagnostic {
-            range: tower_lsp::lsp_types::Range { start, end },
+            range: lsp_types::Range { start, end },
             severity: Some(DiagnosticSeverity::INFORMATION),
             code: None,
             code_description: None,

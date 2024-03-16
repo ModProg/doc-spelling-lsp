@@ -4,7 +4,8 @@ use std::fs;
 use log::error;
 use serde::{Deserialize, Serialize};
 
-use crate::{config, stdresultResultTEExt};
+use crate::lsp::Context;
+use crate::{config, Result};
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 #[must_use]
@@ -16,7 +17,7 @@ pub struct State {
 pub fn update(
     mut state: tokio::sync::watch::Receiver<State>,
     state_config: &config::State,
-) -> super::Result<State> {
+) -> Result<State> {
     let state_location = if let Some(location) = state_config.location.clone() {
         if location.is_dir() {
             location.join("state.json")

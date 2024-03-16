@@ -20,10 +20,11 @@ directories = "5.0.1"
 intentional = "0.1.1"
 # languagetool-rust = "2.1.4"
 languagetool-rust.git = "https://github.com/ModProg/languagetool-rust"
+# languagetool-rust = "2.1.4"
 languagetool-rust.branch = "derive-hash"
 # tower-lsp.git = "https://github.com/ModProg/tower-lsp/"
 # tower-lsp.branch = "custom-message-builder-like"
-tower-lsp.path = "../tower-lsp"
+# tower-lsp.path = "../tower-lsp"
 portpicker = "0.1.1"
 rust-embed = "8.2.0"
 serde = { version = "1.0.197", features = ["derive"] }
@@ -43,6 +44,11 @@ env_logger = "0.11.2"
 derive_more = { version = "1.0.0-beta.6", features = ["display", "from_str"] }
 futures = "0.3.30"
 cached = { version = "0.49.2", features = ["async"] }
+lsp-server = "0.7.6"
+lsp-types = "0.95.0"
+async-trait = "0.1.77"
+forr = "0.2.3"
+# forr.path = "../forr"
 
 [package.metadata.docs.rs]
 all-features = true
