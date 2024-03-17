@@ -7,11 +7,11 @@ use futures::{StreamExt, TryStreamExt};
 use languagetool_rust::check::DataAnnotation;
 use languagetool_rust::CheckRequest;
 use log::{debug, error};
+use lsp_types::{Diagnostic, DiagnosticSeverity, Position};
 use non_exhaustive::non_exhaustive;
 use ra_ap_rustc_lexer::{DocStyle, Token as RustToken, TokenKind as RustTokenKind};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-use lsp_types::{Diagnostic, DiagnosticSeverity, Position};
 
 use crate::state::State;
 
@@ -121,6 +121,7 @@ impl Comment {
 pub struct Meta {
     pub missspelled: Option<String>,
     pub replacements: Vec<String>,
+    pub rule: Option<String>,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -233,6 +234,8 @@ async fn diagnose_comment(
                         .map(|r| r.value)
                         .collect(),
                     missspelled: (result.rule.issue_type == MISSPELLING).then(|| word.to_owned()),
+                    rule: (result.rule.issue_type != MISSPELLING)
+                        .then_some(result.rule.id),
                 })
                 .unwrap(),
             ),

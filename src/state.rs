@@ -48,7 +48,9 @@ pub fn update(
         // update state on disk
         tokio::spawn(async move {
             loop {
-                state.changed().await.unwrap();
+                if state.changed().await.is_err() {
+                    break;
+                }
                 if let Err(e) = fs::write(
                     &state_location,
                     serde_json::to_string(&state.borrow().clone())

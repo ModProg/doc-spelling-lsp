@@ -1,5 +1,5 @@
 //! Any type that [`AttributeNamed`] or [`AttributePositional`] are implemented
-//! lowercase respectivly are supported. These should be the general types that syn
+//! lowercase respectivly hello hello are supported. These should be the general types that syn
 
 //! module **aslkjdh** comment
 

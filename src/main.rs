@@ -30,7 +30,7 @@ mod state;
 async fn main() -> anyhow::Result<()> {
     let log_file = env::var("RUST_LOG_FILE").map(|file| File::create(file).unwrap());
     env_logger::builder()
-        .target(if let Ok(log_file) = dbg!(log_file) {
+        .target(if let Ok(log_file) = log_file {
             env_logger::Target::Pipe(Box::new(log_file))
         } else {
             env_logger::Target::Stderr
@@ -100,6 +100,7 @@ fn run_server(
 #[derive(Display, FromStr)]
 enum WorkspaceCommand {
     AddToDictionary,
+    DisableRule,
 }
 
 impl WorkspaceCommand {
@@ -234,7 +235,7 @@ impl LanguageServer for Lsp {
     ) -> Result<Option<Vec<lsp_types::CodeActionOrCommand>>> {
         info!("handling code action {params:?}");
         let uri = params.text_document.uri;
-        dbg!(Ok(Some(
+        Ok(Some(
             params
                 .context
                 .diagnostics
@@ -282,12 +283,22 @@ impl LanguageServer for Lsp {
                                             .expect("string can be serialized"),
                                     ]),
                                 })
+                            }))
+                            .chain(meta.rule.map(|rule| {
+                                lsp_types::CodeActionOrCommand::Command(lsp_types::Command {
+                                    title: format!("Disable `{rule}`."),
+                                    command: WorkspaceCommand::DisableRule.to_string(),
+                                    arguments: Some(vec![
+                                        serde_json::to_value(rule)
+                                            .expect("string can be serialized"),
+                                    ]),
+                                })
                             })),
                     )
                 })
                 .flatten()
                 .collect(),
-        )))
+        ))
     }
 
     async fn execute_command(
@@ -305,6 +316,18 @@ impl LanguageServer for Lsp {
                 .invalid_params("AddToDictionary expects string argument")?;
                 self.state
                     .send_if_modified(|state| state.dictionary.insert(word));
+                self.diagnose.send_modify(|_| {});
+            }
+            Ok(WorkspaceCommand::DisableRule) => {
+                let rule: String = serde_json::from_value(
+                    params
+                        .arguments
+                        .pop()
+                        .invalid_params("DisableRule requires argument")?,
+                )
+                .invalid_params("DisableRule expects string argument")?;
+                self.state
+                    .send_if_modified(|state| state.disabled_rules.insert(rule));
                 self.diagnose.send_modify(|_| {});
             }
             Err(_) => {
