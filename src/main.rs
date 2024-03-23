@@ -164,10 +164,10 @@ impl LanguageServer for Lsp {
             let client = client.clone();
             tokio::spawn(async move {
                 loop {
-                    diagnose_recv
-                        .changed()
-                        .await
-                        .expect("we should not drop the sender");
+                    if diagnose_recv.changed().await.is_err() {
+                        info!("exiting diagnose handler");
+                        break;
+                    }
                     info!("diagnosing");
                     let tasks = diagnose_recv.borrow_and_update().clone();
                     for uri in tasks {

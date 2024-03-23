@@ -33,7 +33,7 @@ impl Comment {
         let mut parser = pulldown_cmark::Parser::new(&self.content)
             .into_offset_iter()
             .peekable();
-        let mut in_code_block = 0;
+        let mut in_code_block = 0usize;
         let mut last = 0;
         let mut tokens = Vec::new();
         while let Some((event, mut range)) = parser.next() {
@@ -82,8 +82,16 @@ impl Comment {
                     DataAnnotation::new_interpreted_markup(content, "\n\n".to_owned())
                 }
                 pulldown_cmark::Event::End(pulldown_cmark::TagEnd::CodeBlock) => {
-                    in_code_block -= 1;
+                    in_code_block = in_code_block.saturating_sub(1);
                     DataAnnotation::new_interpreted_markup(content, "\n\n".to_owned())
+                }
+                pulldown_cmark::Event::InlineHtml(i) => {
+                    if i.starts_with("<code") {
+                        in_code_block += 1;
+                    } else if i.starts_with("</code") {
+                        in_code_block = in_code_block.saturating_sub(1);
+                    }
+                    DataAnnotation::new_interpreted_markup(content, "0".into())
                 }
                 _ => DataAnnotation::new_markup(content),
             });
@@ -234,8 +242,7 @@ async fn diagnose_comment(
                         .map(|r| r.value)
                         .collect(),
                     missspelled: (result.rule.issue_type == MISSPELLING).then(|| word.to_owned()),
-                    rule: (result.rule.issue_type != MISSPELLING)
-                        .then_some(result.rule.id),
+                    rule: (result.rule.issue_type != MISSPELLING).then_some(result.rule.id),
                 })
                 .unwrap(),
             ),

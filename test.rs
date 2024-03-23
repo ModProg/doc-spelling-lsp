@@ -1,5 +1,6 @@
 //! Any type that [`AttributeNamed`] or [`AttributePositional`] are implemented
 //! lowercase respectivly hello hello are supported. These should be the general types that syn
+//! <code>InlineHtml</code>
 
 //! module **aslkjdh** comment
 
