@@ -1,9 +1,60 @@
 [language-server.language-tool]
-# environment.LOG_FILE = "log"
-environment.RUST_LOG = "lsp_server=debug"
-environment.RUST_BACKTRACE = "1"
 command = "./target/debug/doc-spelling-lsp"
+[language-server.language-tool.environment]
+# LOG_FILE = "log"
+RUST_LOG = "lsp_server=debug,info"
+RUST_BACKTRACE = "1"
+[language-server.language-tool.config.parsing]
+# grammars = ["/usr/lib/helix/runtime/grammars", "/usr/lib/tree_sitter"]
+grammars = ["/usr/lib/helix/runtime/grammars/rust.so", "/usr/lib/helix/runtime/grammars/typst.so"]
+
+[[language-server.language-tool.config.parsing.rust.nodes]]
+type = "Markdown"
+query = """
+[(line_comment (inner_doc_comment_marker) (doc_comment) @line_comment) 
+(inner_attribute_item)
+(line_comment)
+(block_comment)
+(block_comment (inner_doc_comment_marker) (doc_comment) @block_comment)]+ 
+"""
+# [language-server.language-tool.config.parsing.rust.nodes.transform]
+# # For each line in a block comment remove the leading * and possibly a ` `
+# block_comment = '/^\s*\* ?//m'
+
+[[language-server.language-tool.config.parsing.rust.nodes]]
+type = "Markdown"
+query = """
+[(line_comment (outer_doc_comment_marker) (doc_comment) @line_comment) 
+(attribute_item)
+(line_comment)
+(block_comment)
+(block_comment (outer_doc_comment_marker) (doc_comment) @block_comment)]+
+"""
+# [language-server.language-tool.config.parsing.rust.nodes.transform]
+# # For each line in a block comment remove the leading * and possibly a ` `
+# block_comment = '/^\s*\* ?//m'
+
+[[language-server.language-tool.config.parsing.rust.nodes]]
+type = "Markdown"
+query = """
+([(inner_attribute_item (attribute (identifier) @_attribute.ident (string_literal [(string_content) @string (escape_sequence) @string.escape]+)))
+(attribute_item (attribute (identifier) @_attribute.ident (string_literal [(string_content) @string (escape_sequence) @string.escape]+)))
+] (#eq? @_attribute.ident "doc"))
+"""
+# [language-server.language-tool.config.parsing.rust.nodes.transform]
+# escape_sequence = ['/\\n/\n/b', '/.*//']
+
+[language-server.language-tool.config.parsing.typst]
+[[language-server.language-tool.config.parsing.typst.nodes]]
+type = "Text"
+query = """
+[((text) @text) (_)]+
+"""
 
 [[language]]
 name = "rust"
+language-servers = ["language-tool"]
+
+[[language]]
+name = "typst"
 language-servers = ["language-tool"]

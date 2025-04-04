@@ -13,9 +13,16 @@ tasks:
   build:
     cmds:
       - cargo build
+  hx:
+    deps:
+      - build
+    cmds:
+      - rm -f home/.cache/helix/helix.log
+      - env HOME="./home" hx -vvv -w . test-files
   helix:
     deps:
       - build
     cmds:
-      - rm home/.cache/helix/helix.log
-      - env HOME="./home" hx -vvv test.rs
+      - rm -f home/.cache/helix/helix.log
+      - env HOME="./home" helix -vvv -w . test-files
+      

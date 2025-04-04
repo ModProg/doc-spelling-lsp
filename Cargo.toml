@@ -45,6 +45,10 @@ lsp-server = "0.7.6"
 lsp-types = "0.95.0"
 async-trait = "0.1.77"
 forr = "0.2.3"
+tree-sitter-loader = "0.23.0"
+tree-sitter = "0.23.0"
+libloading = "0.8.5"
+crowd = { version = "0.1.0", path = "../crowd" }
 
 [package.metadata.docs.rs]
 all-features = true

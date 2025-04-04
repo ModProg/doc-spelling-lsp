@@ -5,20 +5,25 @@ use std::task::Poll;
 use std::thread;
 
 // TODO remove anyhow from a lib maybe :D
-use anyhow::{bail, Context as _};
+use anyhow::{Context as _, bail};
 use crossbeam_channel::{Sender, TryRecvError};
 use derive_more::Display;
 use extend::ext;
 use forr::forr;
 use futures::future::BoxFuture;
-use futures::{stream, FutureExt, SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt, stream};
 use log::{error, info, warn};
 use lsp_server::{Connection, IoThreads, Message, RequestId, Response, ResponseError};
-use lsp_types::notification::{DidChangeTextDocument, Notification, PublishDiagnostics};
+use lsp_types::notification::{
+    DidChangeTextDocument, Notification, PublishDiagnostics, ShowMessage,
+};
 use lsp_types::request::Request;
-use lsp_types::{Diagnostic, InitializeParams, PublishDiagnosticsParams, ServerCapabilities, Url};
-use serde::de::DeserializeOwned;
+use lsp_types::{
+    Diagnostic, InitializeParams, MessageType, PublishDiagnosticsParams, ServerCapabilities,
+    ShowMessageParams, Url,
+};
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::{JoinHandle, JoinSet};
@@ -335,6 +340,10 @@ impl Client {
             diagnostics,
             version: None,
         });
+    }
+
+    pub fn show_message(&self, typ: MessageType, message: String) {
+        self.send_notification::<ShowMessage>(ShowMessageParams { typ, message });
     }
 
     pub fn send_notification<N: Notification>(&self, params: N::Params) {

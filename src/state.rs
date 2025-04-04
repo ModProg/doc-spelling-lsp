@@ -5,13 +5,25 @@ use log::error;
 use serde::{Deserialize, Serialize};
 
 use crate::lsp::Context;
-use crate::{config, Result};
+use crate::{Result, config};
 
-#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(default)]
 #[must_use]
 pub struct State {
     pub disabled_rules: BTreeSet<String>,
     pub dictionary: HashSet<String>,
+    pub language: String,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            disabled_rules: BTreeSet::new(),
+            dictionary: HashSet::new(),
+            language: "en-US".into(),
+        }
+    }
 }
 
 pub fn update(

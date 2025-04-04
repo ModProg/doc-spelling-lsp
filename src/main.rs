@@ -11,22 +11,27 @@ use derive_more::{Display, FromStr};
 use languagetool_rust::ServerClient;
 use log::{error, info};
 use lsp_types::{
-    CodeAction, CodeActionKind, CodeActionOrCommand, DocumentChanges, OneOf,
+    CodeAction, CodeActionKind, CodeActionOrCommand, DocumentChanges, MessageType, OneOf,
     OptionalVersionedTextDocumentIdentifier, TextDocumentEdit, Url,
 };
+use parsing::{Document, Language};
+use portpicker::Port;
 use serde_json::Value;
 use state::State;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, watch};
 
 use self::diagnostic::diagnose;
 use self::lsp::{Builder, Client, Context, LanguageServer, Result};
 
+#[macro_use]
+mod lsp;
 mod config;
 mod diagnostic;
-mod lsp;
+mod language_tool;
+mod parsing;
 mod state;
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     let log_file = env::var("RUST_LOG_FILE").map(|file| File::create(file).unwrap());
     env_logger::builder()
@@ -58,13 +63,11 @@ async fn main() -> anyhow::Result<()> {
         .await
 }
 
-#[derive(Debug)]
-struct InitializedLsp {}
-
 struct Lsp {
     client: Client,
     ltex_server: Option<Child>,
-    documents: Arc<Mutex<HashMap<Url, String>>>,
+    documents: Arc<Mutex<HashMap<Url, Document>>>,
+    languages: HashMap<String, Language>,
     diagnose: watch::Sender<HashSet<Url>>,
     state: watch::Sender<state::State>,
 }
@@ -77,7 +80,8 @@ impl Lsp {
 
 fn run_server(
     command: &mut Command,
-    config::LocalServer { port, extra_args }: config::LocalServer,
+    port: Option<Port>,
+    extra_args: Vec<String>, // config::LocalServer { port, extra_args }: config::LocalServer,
 ) -> Result<(Option<Child>, ServerClient)> {
     let port = port
         .or_else(portpicker::pick_unused_port)
@@ -101,11 +105,16 @@ fn run_server(
 enum WorkspaceCommand {
     AddToDictionary,
     DisableRule,
+    SetLanguage,
 }
 
 impl WorkspaceCommand {
     fn options() -> Vec<String> {
-        vec![Self::AddToDictionary.to_string()]
+        vec![
+            Self::AddToDictionary.to_string(),
+            Self::DisableRule.to_string(),
+            Self::SetLanguage.to_string(),
+        ]
     }
 }
 
@@ -119,13 +128,21 @@ impl LanguageServer for Lsp {
         info!("initializing");
         let config: config::Config = params
             .initialization_options
+            // TODO be smarter about this
             .map(serde_json::from_value)
+            // .map(|v| serde_json::to_string(&v).unwrap())
+            // .inspect(|v| eprintln!("{v}"))
+            // .map(|s| musli::json::from_str(&s))
             .transpose()
             .internal_error("error deserializing config:")?
             .unwrap_or_default();
 
-        let (ltex_server, ltex_client) = match config.server {
-            config::Server::Embedded { location, config } => {
+        let (ltex_server, ltex_client) = match config.server.clone() {
+            config::Server::Embedded {
+                location,
+                port,
+                extra_args,
+            } => {
                 let location = &if let Some(location) = location.clone() {
                     location
                 } else {
@@ -143,25 +160,39 @@ impl LanguageServer for Lsp {
                         .arg("-cp")
                         .arg(&server_executable)
                         .arg("org.languagetool.server.HTTPServer"),
-                    config,
+                    port,
+                    extra_args,
                 )?
             }
             config::Server::Online {} => todo!(),
             config::Server::Local { .. } => todo!(),
         };
 
-        let documents: Arc<Mutex<HashMap<Url, String>>> = Arc::default();
+        let documents: Arc<Mutex<HashMap<Url, Document>>> = Arc::default();
         let (diagnose_sender, mut diagnose_recv) = watch::channel(HashSet::new());
         let (state_sender, state_recv) = watch::channel(State::default());
+        eprintln!("getting languages");
+        let languages = config
+            .parsing
+            .find_languages()
+            .inspect(|l| {
+                if let Err(e) = l {
+                    error!("{e}");
+                }
+            })
+            .filter_map(Result::ok)
+            .map(|l| (l.name.clone(), l))
+            .collect();
+        eprintln!("got languages: {languages:?}");
         state_sender
             .send(state::update(state_recv.clone(), &config.state)?)
             .unwrap();
 
         {
             let documents = documents.clone();
-            let mut document = String::new();
             let mut state = state_recv.borrow().clone();
             let client = client.clone();
+            let config = config.clone();
             tokio::spawn(async move {
                 loop {
                     if diagnose_recv.changed().await.is_err() {
@@ -171,15 +202,18 @@ impl LanguageServer for Lsp {
                     info!("diagnosing");
                     let tasks = diagnose_recv.borrow_and_update().clone();
                     for uri in tasks {
-                        let documents = documents.lock().await;
-                        documents
-                            .get(&uri)
-                            .expect("we should have just inserted it")
-                            .clone_into(&mut document);
-                        state_recv.borrow().clone_into(&mut state);
-                        drop(documents);
+                        let document;
+                        {
+                            let documents = documents.lock().await;
+                            document = documents
+                                .get(&uri)
+                                .expect("we should have just inserted it")
+                                .clone();
+                        }
 
-                        match diagnose(&document, &ltex_client, &state).await {
+                        state_recv.borrow().clone_into(&mut state);
+
+                        match diagnose(&document, &ltex_client, &state, &config).await {
                             Err(e) => error!("{e:?}"),
                             Ok(diags) => {
                                 client.publish_diagnostics(uri, diags);
@@ -194,6 +228,7 @@ impl LanguageServer for Lsp {
             client,
             ltex_server,
             documents,
+            languages,
             state: state_sender,
             diagnose: diagnose_sender,
         })
@@ -209,7 +244,19 @@ impl LanguageServer for Lsp {
 
     async fn did_open(&self, params: lsp_types::DidOpenTextDocumentParams) {
         let mut documents = self.documents.lock().await;
-        documents.insert(params.text_document.uri.clone(), params.text_document.text);
+        eprintln!("getting language");
+        let Some(language) = self.languages.get(&params.text_document.language_id) else {
+            self.client.show_message(
+                MessageType::ERROR,
+                format!("unknown language {:?}", params.text_document.language_id),
+            );
+            return;
+        };
+        eprintln!("parsing document");
+        documents.insert(
+            params.text_document.uri.clone(),
+            Document::new(params.text_document.text, language.clone()),
+        );
         drop(documents);
         self.publish_diagnostics(params.text_document.uri);
     }
@@ -220,10 +267,20 @@ impl LanguageServer for Lsp {
 
     async fn did_change(&self, mut params: lsp_types::DidChangeTextDocumentParams) {
         // TODO verify this is full document
+        eprintln!("locking documents");
         let mut documents = self.documents.lock().await;
+        eprintln!("retrieving document");
+        let Some(document) = documents.remove(&params.text_document.uri) else {
+            error!("updated document before opening");
+            return;
+        };
+        eprintln!("parsing document");
         documents.insert(
             params.text_document.uri.clone(),
-            params.content_changes.pop().unwrap().text,
+            Document::new(
+                params.content_changes.pop().unwrap().text,
+                document.language,
+            ),
         );
         drop(documents);
         self.publish_diagnostics(params.text_document.uri);
@@ -306,6 +363,17 @@ impl LanguageServer for Lsp {
         mut params: lsp_types::ExecuteCommandParams,
     ) -> Result<Option<Value>> {
         match WorkspaceCommand::from_str(&params.command) {
+            Ok(WorkspaceCommand::SetLanguage) => {
+                let language: String = serde_json::from_value(
+                    params
+                        .arguments
+                        .pop()
+                        .invalid_params("SetLanguage requires argument")?,
+                )
+                .invalid_params("SetLanguage expects string argument")?;
+                self.state.send_modify(|state| state.language = language);
+                self.diagnose.send_modify(|_| {});
+            }
             Ok(WorkspaceCommand::AddToDictionary) => {
                 let word: String = serde_json::from_value(
                     params

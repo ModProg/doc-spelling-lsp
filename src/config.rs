@@ -3,10 +3,12 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 
-#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct Config {
     pub server: Server,
     pub state: State,
+    pub parsing: crate::parsing::Config,
 }
 
 #[derive(Serialize, Deserialize, SmartDefault, Debug, Clone)]
@@ -24,8 +26,14 @@ pub enum Server {
         /// | macOS    | `$HOME/Library/Application Support/doc-spelling-lsp`                       |
         /// | Windows  | `{FOLDERID_RoamingAppData}\doc-spelling-lsp`                               |
         location: Option<PathBuf>,
-        #[serde(flatten)]
-        config: LocalServer,
+        // TODO move in shared struct
+        /// Port to host local server.
+        ///
+        /// Default is a random free port.
+        port: Option<u16>,
+        /// Extra arguments for invoking local server.
+        #[serde(default)]
+        extra_args: Vec<String>,
     },
     Online {
         // TODO
@@ -33,23 +41,19 @@ pub enum Server {
     Local {
         #[serde(default = "default_executable")]
         executable: String,
-        #[serde(flatten)]
-        config: LocalServer,
+        // TODO move in shared struct
+        /// Port to host local server.
+        ///
+        /// Default is a random free port.
+        port: Option<u16>,
+        /// Extra arguments for invoking local server.
+        #[serde(default)]
+        extra_args: Vec<String>,
     },
 }
 
 fn default_executable() -> String {
     "languagetool".into()
-}
-
-#[derive(Serialize, Deserialize, SmartDefault, Debug, Clone)]
-pub struct LocalServer {
-    /// Port to host local server.
-    ///
-    /// Default is a random free port.
-    pub port: Option<u16>,
-    /// Extra arguments for invoking local server.
-    pub extra_args: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
