@@ -1,12 +1,17 @@
 [language-server.language-tool]
 command = "./target/debug/doc-spelling-lsp"
 [language-server.language-tool.environment]
-# LOG_FILE = "log"
-RUST_LOG = "lsp_server=debug,info"
+RUST_LOG_FILE = "log"
+# RUST_LOG = "lsp_server=debug,info;debug"
+RUST_LOG="debug"
 RUST_BACKTRACE = "1"
 [language-server.language-tool.config.parsing]
 # grammars = ["/usr/lib/helix/runtime/grammars", "/usr/lib/tree_sitter"]
-grammars = ["/usr/lib/helix/runtime/grammars/rust.so", "/usr/lib/helix/runtime/grammars/typst.so"]
+# grammars = ["/usr/lib/helix/runtime/grammars/rust.so", "/usr/lib/helix/runtime/grammars/typst.so"]
+grammars = [
+  "/nix/store/j3lzmzlrjdvmyn1y3wddwh8aynsd2x2d-helix-25.07.1/lib/runtime/grammars/rust.so",
+  "/nix/store/j3lzmzlrjdvmyn1y3wddwh8aynsd2x2d-helix-25.07.1/lib/runtime/grammars/typst.so",
+]
 
 [[language-server.language-tool.config.parsing.rust.nodes]]
 type = "Markdown"

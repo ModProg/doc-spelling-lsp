@@ -40,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
         } else {
             env_logger::Target::Stderr
         })
+        .parse_default_env()
         .init();
     embedded_language_tool::handle_extraction();
 
@@ -404,7 +405,7 @@ impl LanguageServer for Lsp {
                     params.command
                 ));
             }
-        };
+        }
         Ok(None)
     }
 }

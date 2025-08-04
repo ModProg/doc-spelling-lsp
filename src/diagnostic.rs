@@ -98,26 +98,39 @@ async fn diagnose_segment(
     state: &State,
 ) -> anyhow::Result<Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
-    for result in check_request(ltex_client, segment.tag_markup(), &state.disabled_rules, &state.language).await {
+    for result in check_request(
+        ltex_client,
+        segment.tag_markup(),
+        &state.disabled_rules,
+        &state.language,
+    )
+    .await
+    {
         const MISSPELLING: &str = "misspelling";
-        let word = segment
-            .text
-            .get(result.offset..result.offset + result.length)
-            .unwrap_or_else(|| {
-                error!("invalid offset in {result:?}");
-                ""
-            });
 
-        if result.rule.issue_type == MISSPELLING && state.dictionary.contains(word) {
+        // the offset & length returned from language tool is in utf16, which would be
+        // great because lsp works with utf16, but our strings are utf8.
+
+        let start = segment.text.utf16_to_byte_idx(result.offset);
+        let end = segment
+            .text
+            .utf16_to_byte_idx(result.offset + result.length);
+
+        let word = segment.text.slice(start..end).to_string();
+
+        if result.rule.issue_type == MISSPELLING && state.dictionary.contains(&word) {
             debug!("ignoring word in dictionary: `{word}`");
             continue;
         }
-        // TODO error? because offset is external
-        let start = segment.map_position(document, result.offset);
-        let end = segment.map_position(document, result.offset + result.length);
+        let start = segment.map_position(document, start);
+        let end = segment.map_position(document, end);
+        debug!(
+            "Creating diagnostic at {start:?}..{end:?} from offsets {}..{}",
+            result.offset,
+            result.offset + result.length
+        );
 
         // TODO unicode :D
-        // TODO code actions
         #[allow(clippy::cast_possible_truncation)]
         diagnostics.push(Diagnostic {
             range: lsp_types::Range { start, end },
@@ -134,7 +147,7 @@ async fn diagnose_segment(
                         .take(10)
                         .map(|r| r.value)
                         .collect(),
-                    missspelled: (result.rule.issue_type == MISSPELLING).then(|| word.to_owned()),
+                    missspelled: (result.rule.issue_type == MISSPELLING).then_some(word),
                     rule: (result.rule.issue_type != MISSPELLING).then_some(result.rule.id),
                 })
                 .unwrap(),
@@ -155,7 +168,7 @@ async fn check_request(
     ltex_client: &languagetool_rust::ServerClient,
     data: Vec<DataAnnotation>,
     disabled_rules: &BTreeSet<String>,
-    language: &str
+    language: &str,
 ) -> Vec<languagetool_rust::check::Match> {
     let mut tries = 0;
     let results = loop {

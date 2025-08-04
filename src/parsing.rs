@@ -7,7 +7,8 @@ pub use config::Config;
 use config::NodeType;
 use languagetool_rust::check::DataAnnotation;
 use lsp_types::Position;
-use tree_sitter::{Language as Grammar, Query, QueryCursor, Tree};
+use ropey::{LineType, Rope, RopeBuilder};
+use tree_sitter::{Language as Grammar, Node, Query, QueryCursor, Tree};
 
 use super::Result;
 use crate::lsp::Context as _;
@@ -26,7 +27,7 @@ impl Config {
                     .invalid_request(format_args!("unable to read dir `{}`", g.display()))
                 {
                     Ok(d) => Box::new(d.map(move |f| {
-                        match f.internal_error(format_args!("reading dir: {g:?}")) {
+                        match f.internal_error(format_args!("reading dir: {}", g.display())) {
                             Ok(f) => Language::load(&f.path()),
                             Err(e) => Err(e),
                         }
@@ -61,18 +62,22 @@ impl Language {
         let file_name = p
             .file_name()
             .internal_error(format_args!(
-                "loading grammar, {p:?} didn't have a file_name"
+                "loading grammar, {} didn't have a file_name",
+                p.display()
             ))?
             .to_string_lossy();
         let name = file_name
             .rsplit_once('.')
             .internal_error(format_args!(
-                "loading grammar, {p:?}'s file name doesn't contain a `.`"
+                "loading grammar, {}'s file name doesn't contain a `.`",
+                p.display()
             ))?
             .0;
 
-        let library = unsafe { Library::new(p) }
-            .internal_error(format_args!("Error opening dynamic library {p:?}"))?;
+        let library = unsafe { Library::new(p) }.internal_error(format_args!(
+            "Error opening dynamic library {}",
+            p.display()
+        ))?;
         let language_fn_name = format!("tree_sitter_{}", name.replace('-', "_"));
         let grammar = unsafe {
             let language_fn: Symbol<unsafe extern "C" fn() -> Grammar> = library
@@ -102,13 +107,14 @@ impl Default for Config {
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    text: String,
+    text: Rope,
     tree: Tree,
     pub language: Language,
 }
 
+#[derive(Debug, Clone)]
 pub struct Segment {
-    pub text: String,
+    pub text: Rope,
     r#type: NodeType,
     /// Maps the start of ranges.
     ranges: BTreeMap<usize, usize>,
@@ -132,9 +138,12 @@ impl Document {
                     let ignored = &ignored;
                     let mut cursor = QueryCursor::new();
                     cursor
-                        .matches(&query, self.tree.root_node(), self.text.as_bytes())
+                        .matches(&query, self.tree.root_node(), |node: Node| {
+                            self.text.slice(node.byte_range()).chunks()
+                        })
                         .map(|c| {
-                            let mut text = String::new();
+                            let mut text = RopeBuilder::new();
+                            let mut length = 0;
                             let mut ranges = BTreeMap::new();
                             for capture in c
                                 .captures
@@ -142,13 +151,19 @@ impl Document {
                                 .filter(|c| !ignored.contains(&(c.index as usize)))
                             {
                                 let start_document = capture.node.start_byte();
-                                // TODO apply regex
-                                ranges.insert(text.len(), start_document);
-                                text.push_str(&self.text[start_document..capture.node.end_byte()]);
-                                text.push('\n');
+                                ranges.insert(length, start_document);
+
+                                let new_text =
+                                    &self.text.slice(start_document..capture.node.end_byte());
+
+                                length += 1 + new_text.len();
+                                new_text
+                                    .chunks()
+                                    .chain(iter::once("\n"))
+                                    .for_each(|c| text.append(c));
                             }
                             Segment {
-                                text,
+                                text: text.finish(),
                                 r#type: n.r#type,
                                 ranges,
                             }
@@ -171,7 +186,7 @@ impl Document {
 
         Self {
             tree: parser.parse(&text, None).expect("WTWTWTWTF"),
-            text,
+            text: Rope::from(text),
             language,
         }
     }
@@ -180,9 +195,10 @@ impl Document {
 impl Segment {
     pub fn tag_markup(&self) -> Vec<DataAnnotation> {
         if self.r#type == NodeType::Text {
-            return vec![DataAnnotation::new_text(self.text.clone())];
+            return vec![DataAnnotation::new_text(self.text.to_string())];
         }
-        let mut parser = pulldown_cmark::Parser::new(&self.text)
+        let text = self.text.to_string();
+        let mut parser = pulldown_cmark::Parser::new(&text)
             .into_offset_iter()
             .peekable();
         let mut in_code_block = 0usize;
@@ -191,7 +207,7 @@ impl Segment {
         while let Some((event, mut range)) = parser.next() {
             if range.start > last {
                 tokens.push(DataAnnotation::new_markup(
-                    self.text[last..range.start].to_owned(),
+                    self.text.slice(last..range.start).to_string(),
                 ));
             } else {
                 range.start = range.start.max(last);
@@ -200,7 +216,7 @@ impl Segment {
                 range.end = parser.peek().map_or(range.end, |e| e.1.start);
             }
             last = range.end;
-            let content = self.text[range].to_owned();
+            let content = self.text.slice(range).to_string();
             tokens.push(match event {
                 pulldown_cmark::Event::Text(_) if in_code_block == 0 => {
                     DataAnnotation::new_text(content)
@@ -252,27 +268,25 @@ impl Segment {
     }
 
     pub fn map_position(&self, document: &Document, offset: usize) -> Position {
-        let document = &document.text;
         let mapping = self
             .ranges
             .range(..=offset)
             .last()
             .unwrap_or(self.ranges.first_key_value().unwrap());
-        let mut offset = mapping.1 + (offset - mapping.0);
+        let offset = mapping.1 + (offset - mapping.0);
 
-        // TODO figure out why
-        while !document.is_char_boundary(offset) {
-            offset += 1;
+        let line = document.text.byte_to_line_idx(offset, LineType::LF_CR);
+        let inline_offset = offset - document.text.line_to_byte_idx(line, LineType::LF_CR);
+        let character = document
+            .text
+            .get_line(line, LineType::LF_CR)
+            .unwrap()
+            .byte_to_utf16_idx(inline_offset);
+
+        Position {
+            line: line.try_into().unwrap(),
+            character: character.try_into().unwrap(),
         }
-
-        let line = (document[..offset].lines().count() - 1).try_into().unwrap();
-        let character = document[..offset]
-            .rsplit_once('\n')
-            .map_or(offset, |(_, r)| r.len())
-            .try_into()
-            .unwrap();
-
-        Position { line, character }
     }
 }
 
